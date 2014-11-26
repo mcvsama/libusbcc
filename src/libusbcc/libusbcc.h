@@ -77,9 +77,6 @@ class StatusException: public Exception
   public:
 	// Ctor
 	explicit StatusException (libusb_error);
-
-  private:
-	const char* msg;
 };
 
 
@@ -100,8 +97,7 @@ class ControlTransfer
 
 
 /**
- * Represents a USB device.
- * Can be closed or open. When open, certain methods can be called on it.
+ * Represents an opened USB device.
  * All Devices must be deleted before Session is deleted.
  */
 class Device
@@ -109,6 +105,8 @@ class Device
   public:
 	/**
 	 * Ctor
+	 * References libusb device in ctor, unreferences it in dtor.
+	 *
 	 * \param	libusb_device
 	 * 			A pointer to libusb device. Must not be null.
 	 * \param	libusb_device_handle
@@ -266,6 +264,10 @@ class Device
 };
 
 
+/**
+ * Represents a USB device.
+ * To open a device, obtain a Device object by calling open().
+ */
 class DeviceDescriptor
 {
   public:

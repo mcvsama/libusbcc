@@ -181,7 +181,7 @@ Device::send (ControlTransfer const& ct, int timeout_ms, std::vector<uint8_t> co
 {
 	// For to-device transfers we can assume that buffer will not change.
 	// Therefore allow const_cast to make C function happy.
-	uint8_t* ll_buffer = const_cast<uint8_t*> (buffer.data());
+	auto ll_buffer = const_cast<uint8_t*> (buffer.data());
 	int bytes_transferred = libusb_control_transfer (_handle, LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_OUT,
 													 ct.request, ct.value, ct.index, ll_buffer, buffer.size(), timeout_ms);
 	if (Session::is_error (bytes_transferred))
