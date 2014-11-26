@@ -1,0 +1,4 @@
+MULABS_LIBUSBCC_HEADERS += libusbcc/libusbcc.h
+
+MULABS_LIBUSBCC_SOURCES += libusbcc/libusbcc.cc
+
