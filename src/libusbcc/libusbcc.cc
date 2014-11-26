@@ -17,7 +17,7 @@
 #include <libusb.h>
 
 // Local:
-#include "libusb.h"
+#include "libusbcc.h"
 
 
 namespace libusb {
