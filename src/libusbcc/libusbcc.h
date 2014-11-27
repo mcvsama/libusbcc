@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <vector>
+#include <memory>
 
 // Lib:
 #include <libusb.h>
@@ -29,8 +30,16 @@
 
 namespace libusb {
 
+class Device;
+class DeviceDescriptor;
+class Bus;
+
+
 template<class T>
     using Optional = boost::optional<T>;
+
+template<class T>
+	using Shared = std::shared_ptr<T>;
 
 
 enum class USBVersion: uint16_t
@@ -77,6 +86,15 @@ class StatusException: public Exception
   public:
 	// Ctor
 	explicit StatusException (libusb_error);
+
+	libusb_error
+	status() const noexcept
+	{
+		return _status;
+	}
+
+  private:
+	libusb_error _status;
 };
 
 
@@ -98,7 +116,7 @@ class ControlTransfer
 
 /**
  * Represents an opened USB device.
- * All Devices must be deleted before Session is deleted.
+ * All Devices must be deleted before Bus is deleted.
  */
 class Device
 {
@@ -107,12 +125,12 @@ class Device
 	 * Ctor
 	 * References libusb device in ctor, unreferences it in dtor.
 	 *
-	 * \param	libusb_device
-	 * 			A pointer to libusb device. Must not be null.
+	 * \param	descriptor
+	 * 			DeviceDescriptor object related to this Device object.
 	 * \param	libusb_device_handle
 	 * 			A pointer to libusb device handle. Must not be null.
 	 */
-	explicit Device (libusb_device* device, libusb_device_handle*);
+	explicit Device (DeviceDescriptor const&, libusb_device_handle*);
 
 	Device (Device const&) = delete;
 
@@ -126,6 +144,107 @@ class Device
 
 	Device&
 	operator= (Device&&);
+
+	/**
+	 * Return DeviceDescriptor for this device.
+	 */
+	DeviceDescriptor const&
+	descriptor() const noexcept;
+
+	/**
+	 * Return device's iManufacturer.
+	 */
+	std::string
+	manufacturer() const;
+
+	/**
+	 * Return device's iProduct.
+	 */
+	std::string
+	product() const;
+
+	/**
+	 * Return serial number.
+	 */
+	std::string
+	serial_number() const;
+
+	/**
+	 * Make a synchronous control transfer to the device.
+	 *
+	 * \param	timeout_ms
+	 * 			Timeout in milliseconds. 0 means unlimited timeout.
+	 */
+	void
+	send (ControlTransfer const&, int timeout_ms = 0, std::vector<uint8_t> const& buffer = {});
+
+	/**
+	 * Make a synchronous control transfer from the device.
+	 *
+	 * \param	timeout_ms
+	 * 			Timeout in milliseconds. 0 means unlimited timeout.
+	 */
+	std::vector<uint8_t>
+	receive (ControlTransfer const& ct, int timeout_ms = 0);
+
+  private:
+	/**
+	 * Empty the object (destructor will do nothing).
+	 */
+	void
+	reset();
+
+	/**
+	 * Close device if it was open, unreference the device.
+	 * Use when destroying or moving-out.
+	 */
+	void
+	cleanup();
+
+	/**
+	 * Return string for given text ID in libusb_device_descriptor.
+	 * (eg. iManufacturer, iProduct).
+	 */
+	std::string
+	get_usb_string (int string_id) const;
+
+  private:
+	// Can be nullptr after a move-out:
+	Shared<DeviceDescriptor>		_descriptor;
+	libusb_device_handle*			_handle		= nullptr;
+};
+
+
+/**
+ * Represents a USB device.
+ * To open a device, obtain a Device object by calling open().
+ */
+class DeviceDescriptor
+{
+	friend class Device;
+
+  public:
+	// Ctor
+	explicit DeviceDescriptor (libusb_device*);
+
+	DeviceDescriptor (DeviceDescriptor const&);
+
+	DeviceDescriptor (DeviceDescriptor&&);
+
+	// Dtor
+	~DeviceDescriptor();
+
+	DeviceDescriptor&
+	operator= (DeviceDescriptor const&);
+
+	DeviceDescriptor&
+	operator= (DeviceDescriptor&&);
+
+	/**
+	 * Opens device and returns a Device object.
+	 */
+	Device
+	open() const;
 
 	/**
 	 * Return USB version.
@@ -182,24 +301,6 @@ class Device
 	usb_protocol() const;
 
 	/**
-	 * Return device's iManufacturer.
-	 */
-	std::string
-	manufacturer() const;
-
-	/**
-	 * Return device's iProduct.
-	 */
-	std::string
-	product() const;
-
-	/**
-	 * Return serial number.
-	 */
-	std::string
-	serial_number() const;
-
-	/**
 	 * Return number of configurations of the device.
 	 */
 	uint8_t
@@ -210,88 +311,6 @@ class Device
 	 */
 	uint8_t
 	max_packet_size_0() const;
-
-	/**
-	 * Make a synchronous control transfer to the device.
-	 *
-	 * \param	timeout_ms
-	 * 			Timeout in milliseconds. 0 means unlimited timeout.
-	 */
-	void
-	send (ControlTransfer const&, int timeout_ms = 0, std::vector<uint8_t> const& buffer = {});
-
-	/**
-	 * Make a synchronous control transfer from the device.
-	 *
-	 * \param	timeout_ms
-	 * 			Timeout in milliseconds. 0 means unlimited timeout.
-	 */
-	std::vector<uint8_t>
-	receive (ControlTransfer const& ct, int timeout_ms = 0);
-
-  private:
-	/**
-	 * Empty the object (destructor will do nothing).
-	 */
-	void
-	reset();
-
-	/**
-	 * Close device if it was open, unreference the device.
-	 * Use when destroying or moving-out.
-	 */
-	void
-	cleanup();
-
-	/**
-	 * Return device descriptor. If not obtained, obtain it.
-	 */
-	libusb_device_descriptor&
-	descriptor() const;
-
-	/**
-	 * Return string for given text ID in libusb_device_descriptor.
-	 * (eg. iManufacturer, iProduct).
-	 */
-	std::string
-	get_usb_string (int string_id) const;
-
-  private:
-	// Can be nullptr after a move-out:
-	libusb_device*								_device		= nullptr;
-	libusb_device_handle*						_handle		= nullptr;
-	Optional<libusb_device_descriptor> mutable	_descriptor;
-};
-
-
-/**
- * Represents a USB device.
- * To open a device, obtain a Device object by calling open().
- */
-class DeviceDescriptor
-{
-  public:
-	// Ctor
-	explicit DeviceDescriptor (libusb_device*);
-
-	DeviceDescriptor (DeviceDescriptor const&);
-
-	DeviceDescriptor (DeviceDescriptor&&);
-
-	// Dtor
-	~DeviceDescriptor();
-
-	DeviceDescriptor&
-	operator= (DeviceDescriptor const&);
-
-	DeviceDescriptor&
-	operator= (DeviceDescriptor&&);
-
-	/**
-	 * Opens device and returns a Device object.
-	 */
-	Device
-	open() const;
 
   private:
 	/**
@@ -307,8 +326,15 @@ class DeviceDescriptor
 	void
 	cleanup();
 
+	/**
+	 * Return device descriptor. If not obtained, obtain it.
+	 */
+	libusb_device_descriptor&
+	descriptor() const;
+
   private:
-	libusb_device* _device;
+	libusb_device*								_device;
+	Optional<libusb_device_descriptor> mutable	_descriptor;
 };
 
 
@@ -319,27 +345,27 @@ typedef std::vector<DeviceDescriptor> DeviceDescriptors;
  * Represents libusb session.
  * http://libusb.sourceforge.net/api-1.0/contexts.html
  */
-class Session
+class Bus
 {
   public:
 	// Ctor
-	Session();
+	Bus();
 
 	// Dtor
-	~Session();
+	~Bus();
 
 	/**
 	 * Return list of devices detected in the system.
 	 */
 	DeviceDescriptors&
-	device_descriptors();
+	device_descriptors() const;
 
 	static bool
 	is_error (int status);
 
   private:
-	libusb_context*		_context;
-	DeviceDescriptors	_device_descriptors;
+	libusb_context*				_context;
+	DeviceDescriptors mutable	_device_descriptors;
 };
 
 } // namespace libusb

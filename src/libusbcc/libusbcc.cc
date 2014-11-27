@@ -13,7 +13,6 @@
 
 // Lib:
 #include <exception>
-#include <iostream>//XXX
 #include <libusb.h>
 
 // Local:
@@ -23,7 +22,8 @@
 namespace libusb {
 
 StatusException::StatusException (libusb_error code):
-	Exception (libusb_strerror (code))
+	Exception (libusb_strerror (code)),
+	_status (code)
 { }
 
 
@@ -34,12 +34,10 @@ ControlTransfer::ControlTransfer (uint8_t request, uint16_t value, uint16_t inde
 { }
 
 
-Device::Device (libusb_device* device, libusb_device_handle* handle):
-	_device (device),
+Device::Device (DeviceDescriptor const& descriptor, libusb_device_handle* handle):
+	_descriptor (std::make_shared<DeviceDescriptor> (descriptor)),
 	_handle (handle)
-{
-	libusb_ref_device (device);
-}
+{ }
 
 
 Device::~Device()
@@ -49,7 +47,7 @@ Device::~Device()
 
 
 Device::Device (Device&& other):
-	_device (other._device),
+	_descriptor (other._descriptor),
 	_handle (other._handle)
 {
 	other.reset();
@@ -60,119 +58,38 @@ Device&
 Device::operator= (Device&& other)
 {
 	cleanup();
+	_descriptor = other._descriptor;
 	_handle = other._handle;
-	_device = other._device;
 	other.reset();
 	return *this;
 }
 
 
-USBVersion
-Device::usb_version() const
+DeviceDescriptor const&
+Device::descriptor() const noexcept
 {
-	return static_cast<USBVersion> (descriptor().bcdUSB);
-}
-
-
-const char*
-Device::usb_version_str() const
-{
-	switch (usb_version())
-	{
-		case USBVersion::V_1_1:
-			return "1.1";
-		case USBVersion::V_2_0:
-			return "2.0";
-		case USBVersion::V_3_0:
-			return "3.0";
-		default:
-			return "unknown";
-	}
-}
-
-
-uint16_t
-Device::release_version() const
-{
-	return descriptor().bcdDevice;
-}
-
-
-std::string
-Device::release_version_str() const
-{
-	uint16_t v = release_version();
-	return std::to_string ((v >> 8) & 0xff) + '.' + std::to_string (v & 0xff);
-}
-
-
-VendorID
-Device::vendor_id() const
-{
-	return descriptor().idVendor;
-}
-
-
-ProductID
-Device::product_id() const
-{
-	return descriptor().idProduct;
-}
-
-
-DeviceClass
-Device::usb_class() const
-{
-	return static_cast<DeviceClass> (descriptor().bDeviceClass);
-}
-
-
-DeviceSubClass
-Device::usb_sub_class() const
-{
-	return static_cast<DeviceSubClass> (descriptor().bDeviceSubClass);
-}
-
-
-DeviceProtocol
-Device::usb_protocol() const
-{
-	return static_cast<DeviceProtocol> (descriptor().bDeviceProtocol);
+	return *_descriptor;
 }
 
 
 std::string
 Device::manufacturer() const
 {
-	return get_usb_string (descriptor().iManufacturer);
+	return get_usb_string (_descriptor->descriptor().iManufacturer);
 }
 
 
 std::string
 Device::product() const
 {
-	return get_usb_string (descriptor().iProduct);
+	return get_usb_string (_descriptor->descriptor().iProduct);
 }
 
 
 std::string
 Device::serial_number() const
 {
-	return get_usb_string (descriptor().iSerialNumber);
-}
-
-
-uint8_t
-Device::num_configurations() const
-{
-	return descriptor().bNumConfigurations;
-}
-
-
-uint8_t
-Device::max_packet_size_0() const
-{
-	return descriptor().bMaxPacketSize0;
+	return get_usb_string (_descriptor->descriptor().iSerialNumber);
 }
 
 
@@ -184,7 +101,7 @@ Device::send (ControlTransfer const& ct, int timeout_ms, std::vector<uint8_t> co
 	auto ll_buffer = const_cast<uint8_t*> (buffer.data());
 	int bytes_transferred = libusb_control_transfer (_handle, LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_OUT,
 													 ct.request, ct.value, ct.index, ll_buffer, buffer.size(), timeout_ms);
-	if (Session::is_error (bytes_transferred))
+	if (Bus::is_error (bytes_transferred))
 		throw StatusException (static_cast<libusb_error> (bytes_transferred));
 }
 
@@ -196,7 +113,7 @@ Device::receive (ControlTransfer const& ct, int timeout_ms)
 	std::vector<uint8_t> buffer (64, 0);
 	int bytes_transferred = libusb_control_transfer (_handle, LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_IN,
 													 ct.request, ct.value, ct.index, buffer.data(), buffer.size(), timeout_ms);
-	if (Session::is_error (bytes_transferred))
+	if (Bus::is_error (bytes_transferred))
 		throw StatusException (static_cast<libusb_error> (bytes_transferred));
 	buffer.resize (bytes_transferred);
 	return buffer;
@@ -207,7 +124,6 @@ inline void
 Device::reset()
 {
 	_handle = nullptr;
-	_device = nullptr;
 }
 
 
@@ -216,24 +132,6 @@ Device::cleanup()
 {
 	if (_handle)
 		libusb_close (_handle);
-	if (_device)
-		libusb_unref_device (_device);
-}
-
-
-inline libusb_device_descriptor&
-Device::descriptor() const
-{
-	if (_descriptor)
-		return *_descriptor;
-	else
-	{
-		_descriptor.emplace (libusb_device_descriptor());
-		int err = libusb_get_device_descriptor (_device, _descriptor.get_ptr());
-		if (Session::is_error (err))
-			throw StatusException (static_cast<libusb_error> (err));
-		return *_descriptor;
-	}
 }
 
 
@@ -307,9 +205,113 @@ DeviceDescriptor::open() const
 {
 	libusb_device_handle* handle;
 	int err = libusb_open (_device, &handle);
-	if (Session::is_error (err))
+	if (Bus::is_error (err))
 		throw StatusException (static_cast<libusb_error> (err));
-	return Device (_device, handle);
+	return Device (*this, handle);
+}
+
+
+USBVersion
+DeviceDescriptor::usb_version() const
+{
+	return static_cast<USBVersion> (descriptor().bcdUSB);
+}
+
+
+const char*
+DeviceDescriptor::usb_version_str() const
+{
+	switch (usb_version())
+	{
+		case USBVersion::V_1_1:
+			return "1.1";
+		case USBVersion::V_2_0:
+			return "2.0";
+		case USBVersion::V_3_0:
+			return "3.0";
+		default:
+			return "unknown";
+	}
+}
+
+
+uint16_t
+DeviceDescriptor::release_version() const
+{
+	return descriptor().bcdDevice;
+}
+
+
+std::string
+DeviceDescriptor::release_version_str() const
+{
+	uint16_t v = release_version();
+	return std::to_string ((v >> 8) & 0xff) + '.' + std::to_string (v & 0xff);
+}
+
+
+VendorID
+DeviceDescriptor::vendor_id() const
+{
+	return descriptor().idVendor;
+}
+
+
+ProductID
+DeviceDescriptor::product_id() const
+{
+	return descriptor().idProduct;
+}
+
+
+DeviceClass
+DeviceDescriptor::usb_class() const
+{
+	return static_cast<DeviceClass> (descriptor().bDeviceClass);
+}
+
+
+DeviceSubClass
+DeviceDescriptor::usb_sub_class() const
+{
+	return static_cast<DeviceSubClass> (descriptor().bDeviceSubClass);
+}
+
+
+DeviceProtocol
+DeviceDescriptor::usb_protocol() const
+{
+	return static_cast<DeviceProtocol> (descriptor().bDeviceProtocol);
+}
+
+
+uint8_t
+DeviceDescriptor::num_configurations() const
+{
+	return descriptor().bNumConfigurations;
+}
+
+
+uint8_t
+DeviceDescriptor::max_packet_size_0() const
+{
+	return descriptor().bMaxPacketSize0;
+}
+
+
+inline libusb_device_descriptor&
+DeviceDescriptor::descriptor() const
+{
+	if (_descriptor)
+		return *_descriptor;
+	else
+	{
+		_descriptor.emplace (libusb_device_descriptor());
+		int err = libusb_get_device_descriptor (_device, _descriptor.get_ptr());
+		if (Bus::is_error (err))
+			throw StatusException (static_cast<libusb_error> (err));
+		return *_descriptor;
+	}
 }
 
 
@@ -328,11 +330,11 @@ DeviceDescriptor::cleanup()
 }
 
 
-Session::Session()
+Bus::Bus()
 {
 	try {
 		int err = libusb_init (&_context);
-		if (Session::is_error (err))
+		if (Bus::is_error (err))
 			throw StatusException (static_cast<libusb_error> (err));
 	}
 	catch (...)
@@ -342,14 +344,14 @@ Session::Session()
 }
 
 
-Session::~Session()
+Bus::~Bus()
 {
 	libusb_exit (_context);
 }
 
 
 DeviceDescriptors&
-Session::device_descriptors()
+Bus::device_descriptors() const
 {
 	try {
 		if (_device_descriptors.empty())
@@ -380,7 +382,7 @@ Session::device_descriptors()
 
 
 bool
-Session::is_error (int status)
+Bus::is_error (int status)
 {
 	switch (status)
 	{
