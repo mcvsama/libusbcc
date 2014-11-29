@@ -357,15 +357,18 @@ class Bus
 	/**
 	 * Return list of devices detected in the system.
 	 */
-	DeviceDescriptors&
+	DeviceDescriptors
 	device_descriptors() const;
 
+	/**
+	 * Return true if an int returned by libusb function
+	 * is an error status code.
+	 */
 	static bool
 	is_error (int status);
 
   private:
-	libusb_context*				_context;
-	DeviceDescriptors mutable	_device_descriptors;
+	libusb_context* _context;
 };
 
 } // namespace libusb

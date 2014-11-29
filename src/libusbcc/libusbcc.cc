@@ -350,34 +350,33 @@ Bus::~Bus()
 }
 
 
-DeviceDescriptors&
+DeviceDescriptors
 Bus::device_descriptors() const
 {
+	DeviceDescriptors result;
+
 	try {
-		if (_device_descriptors.empty())
+		libusb_device** device_list;
+		std::size_t num_devices = libusb_get_device_list (_context, &device_list);
+
+		if (is_error (num_devices))
 		{
-			libusb_device** device_list;
-			std::size_t num_devices = libusb_get_device_list (_context, &device_list);
-
-			if (is_error (num_devices))
-			{
-				num_devices = 0;
-				throw StatusException (static_cast<libusb_error> (num_devices));
-			}
-
-			// Build list of Devices:
-			for (size_t i = 0; i < num_devices; ++i)
-				_device_descriptors.emplace_back (device_list[i]);
-
-			libusb_free_device_list (device_list, 1);
+			num_devices = 0;
+			throw StatusException (static_cast<libusb_error> (num_devices));
 		}
+
+		// Build list of Devices:
+		for (size_t i = 0; i < num_devices; ++i)
+			result.emplace_back (device_list[i]);
+
+		libusb_free_device_list (device_list, 1);
 	}
 	catch (...)
 	{
 		std::throw_with_nested (Exception ("failed to get device list"));
 	}
 
-	return _device_descriptors;
+	return result;
 }
 
 
