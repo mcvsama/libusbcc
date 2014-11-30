@@ -235,6 +235,36 @@ DeviceDescriptor::open() const
 }
 
 
+uint8_t
+DeviceDescriptor::bus_id() const noexcept
+{
+	return libusb_get_bus_number (_device);
+}
+
+
+uint8_t
+DeviceDescriptor::port_id() const noexcept
+{
+	return libusb_get_port_number (_device);
+}
+
+
+DeviceDescriptor
+DeviceDescriptor::parent (Bus const& bus) const
+{
+	// Needed for libusb_get_parent:
+	low_level::DeviceList devices (bus.get_libusb_context());
+	// This requires DeviceList to be present (needs to be called
+	// between libusb_get_device_list() and libusb_free_device_list():
+	libusb_device* parent_device = libusb_get_parent (_device);
+
+	if (parent_device)
+		return DeviceDescriptor (parent_device);
+	else
+		throw UnavailableException();
+}
+
+
 USBVersion
 DeviceDescriptor::usb_version() const
 {

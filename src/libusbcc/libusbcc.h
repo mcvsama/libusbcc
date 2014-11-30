@@ -335,6 +335,25 @@ class DeviceDescriptor
 	open() const;
 
 	/**
+	 * Return the number of the bus that a device is connected to.
+	 */
+	uint8_t
+	bus_id() const noexcept;
+
+	/**
+	 * Return the number of the port that a device is connected to.
+	 * Value of 0 means the port number is not available.
+	 */
+	uint8_t
+	port_id() const noexcept;
+
+	/**
+	 * Get the parent from the specified device.
+	 */
+	DeviceDescriptor
+	parent (Bus const&) const;
+
+	/**
 	 * Return USB version.
 	 */
 	USBVersion
