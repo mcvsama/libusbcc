@@ -495,6 +495,12 @@ class Bus
 	DeviceDescriptors
 	device_descriptors() const;
 
+	/**
+	 * Find and return DeviceDescriptor with specified address.
+	 */
+	Optional<DeviceDescriptor>
+	find_by_address (uint8_t address) const;
+
   private:
 	libusb_context* _context;
 };

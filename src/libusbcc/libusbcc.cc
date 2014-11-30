@@ -442,6 +442,25 @@ Bus::device_descriptors() const
 }
 
 
+Optional<DeviceDescriptor>
+Bus::find_by_address (uint8_t address) const
+{
+	try {
+		low_level::DeviceList devices (_context);
+
+		for (auto const& lld: devices)
+			if (libusb_get_device_address (lld) == address)
+				return { DeviceDescriptor (lld) };
+	}
+	catch (...)
+	{
+		std::throw_with_nested (Exception ("failed to get device by address"));
+	}
+
+	return { };
+}
+
+
 bool
 is_error (int status)
 {
