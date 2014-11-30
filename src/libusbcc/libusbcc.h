@@ -275,19 +275,35 @@ class Device
 	std::vector<uint8_t>
 	receive (ControlTransfer const& ct, int timeout_ms = 0);
 
+	/**
+	 * Perform a USB port reset to reinitialize a device.
+	 * The system will attempt to restore the previous configuration and alternate
+	 * settings after the reset has completed.
+	 *
+	 * If the reset fails, the descriptors change, or the previous state cannot be
+	 * restored, the device will appear to be disconnected and reconnected. This means
+	 * that the device handle is no longer valid (you should close it) and rediscover
+	 * the device. An exception of StatusException (LIBUSB_ERROR_NOT_FOUND) indicates
+	 * when this is the case.
+	 *
+	 * This is a blocking function which usually incurs a noticeable delay.
+	 */
+	void
+	reset();
+
   private:
 	/**
 	 * Empty the object (destructor will do nothing).
 	 */
 	void
-	reset();
+	reset_object();
 
 	/**
 	 * Close device if it was open, unreference the device.
 	 * Use when destroying or moving-out.
 	 */
 	void
-	cleanup();
+	cleanup_object();
 
 	/**
 	 * Return string for given text ID in libusb_device_descriptor.
@@ -352,6 +368,12 @@ class DeviceDescriptor
 	 */
 	DeviceDescriptor
 	parent (Bus const&) const;
+
+	/**
+	 * Return the address of the device on the bus it is connected to.
+	 */
+	uint8_t
+	address() const noexcept;
 
 	/**
 	 * Return USB version.
@@ -424,14 +446,14 @@ class DeviceDescriptor
 	 * Empty the object (destructor will do nothing).
 	 */
 	void
-	reset();
+	reset_object();
 
 	/**
 	 * Unreference the device.
 	 * Use when destroying or moving-out.
 	 */
 	void
-	cleanup();
+	cleanup_object();
 
 	/**
 	 * Return device descriptor. If not obtained, obtain it.

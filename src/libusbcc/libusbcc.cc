@@ -66,7 +66,7 @@ Device::Device (DeviceDescriptor const& descriptor, libusb_device_handle* handle
 
 Device::~Device()
 {
-	cleanup();
+	cleanup_object();
 }
 
 
@@ -74,17 +74,17 @@ Device::Device (Device&& other):
 	_descriptor (other._descriptor),
 	_handle (other._handle)
 {
-	other.reset();
+	other.reset_object();
 }
 
 
 Device&
 Device::operator= (Device&& other)
 {
-	cleanup();
+	cleanup_object();
 	_descriptor = other._descriptor;
 	_handle = other._handle;
-	other.reset();
+	other.reset_object();
 	return *this;
 }
 
@@ -144,15 +144,25 @@ Device::receive (ControlTransfer const& ct, int timeout_ms)
 }
 
 
-inline void
+void
 Device::reset()
+{
+	auto status = libusb_reset_device (_handle);
+
+	if (is_error (status))
+		throw StatusException (static_cast<libusb_error> (status));
+}
+
+
+inline void
+Device::reset_object()
 {
 	_handle = nullptr;
 }
 
 
 inline void
-Device::cleanup()
+Device::cleanup_object()
 {
 	if (_handle)
 		libusb_close (_handle);
@@ -194,20 +204,20 @@ DeviceDescriptor::DeviceDescriptor (DeviceDescriptor const& other):
 DeviceDescriptor::DeviceDescriptor (DeviceDescriptor&& other):
 	_device (other._device)
 {
-	other.reset();
+	other.reset_object();
 }
 
 
 DeviceDescriptor::~DeviceDescriptor()
 {
-	cleanup();
+	cleanup_object();
 }
 
 
 DeviceDescriptor&
 DeviceDescriptor::operator= (DeviceDescriptor const& other)
 {
-	cleanup();
+	cleanup_object();
 	_device = other._device;
 	libusb_ref_device (_device);
 	return *this;
@@ -217,9 +227,9 @@ DeviceDescriptor::operator= (DeviceDescriptor const& other)
 DeviceDescriptor&
 DeviceDescriptor::operator= (DeviceDescriptor&& other)
 {
-	cleanup();
+	cleanup_object();
 	_device = other._device;
-	other.reset();
+	other.reset_object();
 	return *this;
 }
 
@@ -262,6 +272,13 @@ DeviceDescriptor::parent (Bus const& bus) const
 		return DeviceDescriptor (parent_device);
 	else
 		throw UnavailableException();
+}
+
+
+uint8_t
+DeviceDescriptor::address() const noexcept
+{
+	return libusb_get_device_address (_device);
 }
 
 
@@ -370,14 +387,14 @@ DeviceDescriptor::descriptor() const
 
 
 inline void
-DeviceDescriptor::reset()
+DeviceDescriptor::reset_object()
 {
 	_device = nullptr;
 }
 
 
 inline void
-DeviceDescriptor::cleanup()
+DeviceDescriptor::cleanup_object()
 {
 	if (_device)
 		libusb_unref_device (_device);
