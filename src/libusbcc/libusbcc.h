@@ -30,6 +30,83 @@
 
 namespace libusb {
 
+namespace low_level {
+
+/**
+ * RAII-style class for libusb_get_device_list() + libusb_free_device_list().
+ */
+class DeviceList
+{
+  public:
+	/**
+	 * Ctor
+	 * May throw StatusException.
+	 */
+	explicit DeviceList (libusb_context*);
+
+	// Dtor
+	~DeviceList();
+
+	/**
+	 * Access the list elements.
+	 */
+	libusb_device*
+	operator[] (std::size_t index) const noexcept;
+
+	/**
+	 * Return size of the list.
+	 */
+	std::size_t
+	size() const noexcept;
+
+	/**
+	 * Return first element iterator.
+	 */
+	libusb_device**
+	begin() const noexcept;
+
+	/**
+	 * Return after-the-last element iterator.
+	 */
+	libusb_device**
+	end() const noexcept;
+
+  private:
+	libusb_device**	_list;
+	std::size_t		_size;
+};
+
+
+inline libusb_device*
+DeviceList::operator[] (std::size_t index) const noexcept
+{
+	return _list[index];
+}
+
+
+inline std::size_t
+DeviceList::size() const noexcept
+{
+	return _size;
+}
+
+
+inline libusb_device**
+DeviceList::begin() const noexcept
+{
+	return _list;
+}
+
+
+inline libusb_device**
+DeviceList::end() const noexcept
+{
+	return _list + _size;
+}
+
+} // namespace low_level
+
+
 class Device;
 class DeviceDescriptor;
 class Bus;
@@ -79,7 +156,7 @@ class Exception: public std::runtime_error
 
 
 /**
- * Thrown from ctor when libusb initialization fails.
+ * Thrown from a function when error is detected.
  */
 class StatusException: public Exception
 {
@@ -95,6 +172,17 @@ class StatusException: public Exception
 
   private:
 	libusb_error _status;
+};
+
+
+/**
+ * Thrown when result of a function is not available.
+ */
+class UnavailableException: public Exception
+{
+  public:
+	// Ctor
+	explicit UnavailableException();
 };
 
 
@@ -355,21 +443,35 @@ class Bus
 	~Bus();
 
 	/**
+	 * Return libusb context pointer.
+	 */
+	libusb_context*
+	get_libusb_context() const noexcept;
+
+	/**
 	 * Return list of devices detected in the system.
 	 */
 	DeviceDescriptors
 	device_descriptors() const;
 
-	/**
-	 * Return true if an int returned by libusb function
-	 * is an error status code.
-	 */
-	static bool
-	is_error (int status);
-
   private:
 	libusb_context* _context;
 };
+
+
+inline libusb_context*
+Bus::get_libusb_context() const noexcept
+{
+	return _context;
+}
+
+
+/**
+ * Return true if an int returned by libusb function
+ * is an error status code.
+ */
+bool
+is_error (int status);
 
 } // namespace libusb
 

@@ -21,9 +21,33 @@
 
 namespace libusb {
 
+namespace low_level {
+
+DeviceList::DeviceList (libusb_context* context)
+{
+	_size = libusb_get_device_list (context, &_list);
+
+	if (is_error (_size))
+		throw StatusException (static_cast<libusb_error> (_size));
+}
+
+
+DeviceList::~DeviceList()
+{
+	libusb_free_device_list (_list, 1);
+}
+
+} // namespace low_level
+
+
 StatusException::StatusException (libusb_error code):
 	Exception (libusb_strerror (code)),
 	_status (code)
+{ }
+
+
+UnavailableException::UnavailableException():
+	Exception ("result unavailable")
 { }
 
 
@@ -101,7 +125,7 @@ Device::send (ControlTransfer const& ct, int timeout_ms, std::vector<uint8_t> co
 	auto ll_buffer = const_cast<uint8_t*> (buffer.data());
 	int bytes_transferred = libusb_control_transfer (_handle, LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_OUT,
 													 ct.request, ct.value, ct.index, ll_buffer, buffer.size(), timeout_ms);
-	if (Bus::is_error (bytes_transferred))
+	if (is_error (bytes_transferred))
 		throw StatusException (static_cast<libusb_error> (bytes_transferred));
 }
 
@@ -113,7 +137,7 @@ Device::receive (ControlTransfer const& ct, int timeout_ms)
 	std::vector<uint8_t> buffer (64, 0);
 	int bytes_transferred = libusb_control_transfer (_handle, LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_IN,
 													 ct.request, ct.value, ct.index, buffer.data(), buffer.size(), timeout_ms);
-	if (Bus::is_error (bytes_transferred))
+	if (is_error (bytes_transferred))
 		throw StatusException (static_cast<libusb_error> (bytes_transferred));
 	buffer.resize (bytes_transferred);
 	return buffer;
@@ -205,7 +229,7 @@ DeviceDescriptor::open() const
 {
 	libusb_device_handle* handle;
 	int err = libusb_open (_device, &handle);
-	if (Bus::is_error (err))
+	if (is_error (err))
 		throw StatusException (static_cast<libusb_error> (err));
 	return Device (*this, handle);
 }
@@ -308,7 +332,7 @@ DeviceDescriptor::descriptor() const
 	{
 		_descriptor.emplace (libusb_device_descriptor());
 		int err = libusb_get_device_descriptor (_device, _descriptor.get_ptr());
-		if (Bus::is_error (err))
+		if (is_error (err))
 			throw StatusException (static_cast<libusb_error> (err));
 		return *_descriptor;
 	}
@@ -334,7 +358,7 @@ Bus::Bus()
 {
 	try {
 		int err = libusb_init (&_context);
-		if (Bus::is_error (err))
+		if (is_error (err))
 			throw StatusException (static_cast<libusb_error> (err));
 	}
 	catch (...)
@@ -356,20 +380,11 @@ Bus::device_descriptors() const
 	DeviceDescriptors result;
 
 	try {
-		libusb_device** device_list;
-		std::size_t num_devices = libusb_get_device_list (_context, &device_list);
-
-		if (is_error (num_devices))
-		{
-			num_devices = 0;
-			throw StatusException (static_cast<libusb_error> (num_devices));
-		}
+		low_level::DeviceList devices (_context);
 
 		// Build list of Devices:
-		for (size_t i = 0; i < num_devices; ++i)
-			result.emplace_back (device_list[i]);
-
-		libusb_free_device_list (device_list, 1);
+		for (auto const& d: devices)
+			result.emplace_back (d);
 	}
 	catch (...)
 	{
@@ -381,7 +396,7 @@ Bus::device_descriptors() const
 
 
 bool
-Bus::is_error (int status)
+is_error (int status)
 {
 	switch (status)
 	{
